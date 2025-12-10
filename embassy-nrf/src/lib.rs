@@ -333,6 +333,22 @@ pub mod config {
         NotConfigured,
     }
 
+    /// Reset pin configuration.
+    ///
+    /// Setting the
+    #[cfg(feature = "_nrf52")]
+    #[non_exhaustive]
+    pub enum ResetPinConfig {
+        /// The initialization method will configure the designated reset pin to either function as
+        /// the a regular nRESET pin or a GPIO pin, depending on whether the `reset-pin-as-gpio`
+        /// configuration feature is enabled or not. This is the default.
+        Configured,
+        /// The initialization method will not touch the reset pin configuration in the hardware.
+        /// Please note that the reset pin might stop working because of this. Only use this
+        /// if you want to configure the reset pin by other means.
+        NotConfigured,
+    }
+
     /// Settings for enabling the built in DCDC converters.
     #[cfg(not(any(feature = "_nrf5340", feature = "_nrf91")))]
     pub struct DcdcConfig {
@@ -566,6 +582,9 @@ pub mod config {
         /// Clock speed configuration.
         #[cfg(feature = "_nrf54l")]
         pub clock_speed: ClockSpeed,
+        /// Reset pin configuration.
+        #[cfg(feature = "_nrf52")]
+        pub reset_pin: ResetPinConfig,
     }
 
     impl Default for Config {
@@ -608,6 +627,8 @@ pub mod config {
                 debug: Debug::Allowed,
                 #[cfg(feature = "_nrf54l")]
                 clock_speed: ClockSpeed::CK64,
+                #[cfg(feature = "_nrf52")]
+                reset_pin: ResetPinConfig::Configured,
             }
         }
     }
@@ -930,29 +951,32 @@ pub fn init(config: config::Config) -> Peripherals {
     }
 
     #[cfg(feature = "_nrf52")]
-    unsafe {
-        let value = if cfg!(feature = "reset-pin-as-gpio") {
-            !0
-        } else {
-            chip::RESET_PIN
-        };
-        let res1 = uicr_write(consts::UICR_PSELRESET1, value);
-        let res2 = uicr_write(consts::UICR_PSELRESET2, value);
-        needs_reset |= res1 == WriteResult::Written || res2 == WriteResult::Written;
-        if res1 == WriteResult::Failed || res2 == WriteResult::Failed {
-            #[cfg(not(feature = "reset-pin-as-gpio"))]
-            warn!(
-                "You have requested enabling chip reset functionality on the reset pin, by not enabling the Cargo feature `reset-pin-as-gpio`.\n\
+    match config.reset_pin {
+        config::ResetPinConfig::Configured => unsafe {
+            let value = if cfg!(feature = "reset-pin-as-gpio") {
+                !0
+            } else {
+                chip::RESET_PIN
+            };
+            let res1 = uicr_write(consts::UICR_PSELRESET1, value);
+            let res2 = uicr_write(consts::UICR_PSELRESET2, value);
+            needs_reset |= res1 == WriteResult::Written || res2 == WriteResult::Written;
+            if res1 == WriteResult::Failed || res2 == WriteResult::Failed {
+                #[cfg(not(feature = "reset-pin-as-gpio"))]
+                warn!(
+                    "You have requested enabling chip reset functionality on the reset pin, by not enabling the Cargo feature `reset-pin-as-gpio`.\n\
                 However, UICR is already programmed to some other setting, and can't be changed without erasing it.\n\
                 To fix this, erase UICR manually, for example using `probe-rs erase` or `nrfjprog --eraseuicr`."
-            );
-            #[cfg(feature = "reset-pin-as-gpio")]
-            warn!(
-                "You have requested using the reset pin as GPIO, by enabling the Cargo feature `reset-pin-as-gpio`.\n\
+                );
+                #[cfg(feature = "reset-pin-as-gpio")]
+                warn!(
+                    "You have requested using the reset pin as GPIO, by enabling the Cargo feature `reset-pin-as-gpio`.\n\
                 However, UICR is already programmed to some other setting, and can't be changed without erasing it.\n\
                 To fix this, erase UICR manually, for example using `probe-rs erase` or `nrfjprog --eraseuicr`."
-            );
-        }
+                );
+            }
+        },
+        config::ResetPinConfig::NotConfigured => ()
     }
 
     #[cfg(any(feature = "_nrf52", all(feature = "_nrf5340-app", feature = "_s")))]
