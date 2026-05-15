@@ -123,6 +123,10 @@ embassy-sync = { path = "../embassy-sync" }
 rustversion = "1.0.21"
 
 [features]
+default = ["pender"]
+
+# Include the pender.
+pender = []
 
 ## Enable nightly-only features
 nightly = ["embassy-executor-macros/nightly"]
